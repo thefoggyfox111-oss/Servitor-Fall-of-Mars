@@ -271,6 +271,7 @@ function build(){
 build();
 function select(kind,entity,hero,clock){
  if(kind==='servitor'){
+  if(hero.hp<=0)return ['death',Math.max(0,Math.min(FRAMES.death-1,Math.floor((clock-hero.deathClock)/5)))];
   if(hero.attack>0)return ['attack',Math.min(FRAMES.attack-1,Math.floor((17-hero.attack)*FRAMES.attack/17))];
   if(hero.inv>37)return ['hurt',Math.floor((45-hero.inv)/2)%FRAMES.hurt];
   if(!hero.ground){const x=hero.vy<-4?0:hero.vy<0?1:hero.vy<6?2:3;return ['jump',x];}
