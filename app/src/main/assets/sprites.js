@@ -5,7 +5,7 @@
 const C={ink:'#181824',shadow:'#242532',iron:'#53616a',steel:'#8c9aa0',silver:'#ccd5c6',skin:'#baa08f',skinLit:'#ead1b0',brass:'#bb8b55',gold:'#f0c57e',red:'#f34e38',redLit:'#ffc37a',robe:'#7c2c37',robeLit:'#b24b4e',wine:'#482734',purple:'#493451',violet:'#79627e',plasma:'#fa527e',bone:'#d5c0a3',dark:'#12131d'};
 const sheets={};
 const poses={idle:4,run:8,jump:2,attack:6,hurt:3,death:7};
-const frameSize={servitor:[60,76],heretic:[54,74],marine:[80,100]};
+const frameSize={servitor:[120,90],heretic:[64,74],marine:[112,112]};
 function r(c,x,y,w,h,color){c.fillStyle=color;c.fillRect(Math.round(x),Math.round(y),Math.round(w),Math.round(h));}
 function poly(c,p,color){c.fillStyle=color;c.beginPath();c.moveTo(Math.round(p[0][0]),Math.round(p[0][1]));for(let i=1;i<p.length;i++)c.lineTo(Math.round(p[i][0]),Math.round(p[i][1]));c.closePath();c.fill();}
 function chain(c,pts,w,col){for(let i=0;i<pts.length-1;i++){const [x,y]=pts[i], [xx,yy]=pts[i+1],n=Math.max(Math.abs(xx-x),Math.abs(yy-y));for(let j=0;j<=n;j++){const t=j/n;r(c,x+(xx-x)*t-w/2,y+(yy-y)*t-w/2,w,w,col);}}}
