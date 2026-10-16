@@ -13,7 +13,7 @@ const K={
  bone:'#d0b999',plasma:'#ff557d',rust:'#814b48'
 };
 const FRAMES={idle:6,run:10,jump:4,attack:8,hurt:4,death:8};
-const DIMENSIONS={servitor:[192,192],heretic:[208,182],marine:[256,222]};
+const DIMENSIONS={servitor:[208,192],heretic:[208,182],marine:[272,238]};
 const FOOT_MARGIN=56;
 const frames={};
 const TWO_PI=Math.PI*2;
@@ -177,7 +177,7 @@ function heretic(ctx,state,n){
 }
 function marine(ctx,state,n){
  const z=pose(state,n,FRAMES[state]);ctx.save();
- if(z.dying){ctx.translate(8*z.collapse,32*z.collapse);ctx.rotate(-.96*z.collapse);ctx.globalAlpha=1-.13*z.collapse;}
+ if(z.dying){ctx.translate(8*z.collapse,22*z.collapse);ctx.rotate(-.96*z.collapse);ctx.globalAlpha=1-.13*z.collapse;}
  else ctx.translate(z.lean*.65,-z.bob);
  const st=z.running?Math.round(z.cyc*9):z.jumping?z.stride:0;
  // Heavy motorized boots, articulated knee and overlapping greaves.
