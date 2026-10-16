@@ -76,7 +76,7 @@ function particles(x,y,count,palette,force=1){
  for(let i=0;i<count;i++){let ang=rand(i*17+clock*71)*Math.PI*2,spd=(1+rand(i*33+clock*15)*4)*force;effects.push({x,y,vx:Math.cos(ang)*spd,vy:Math.sin(ang)*spd-1.1,life:18+rand(i*18+clock)*25,max:43,c:palette[Math.floor(rand(i*5+clock)*palette.length)],size:2+rand(i*7+clock)*3})}
  if(effects.length>140)effects.splice(0,effects.length-140);
 }
-function hurt(e,damage){e.hp-=damage;e.hit=12;shake=Math.max(shake,e.big?7:4);particles(e.x+e.w/2,e.y+e.h/2,e.big?20:12,['#ed6a45','#ffba69','#d6b7a1','#92323e'],1.15);if(e.hp<=0){e.dead=true;e.deathClock=clock;particles(e.x+e.w/2,e.y+e.h/2,28,['#a64042','#e69a59','#a1a09d'],1.6)}}
+function hurt(e,damage){e.hp-=damage;e.hit=12;e.attackTimer=0;e.cd=Math.max(e.cd,26);shake=Math.max(shake,e.big?7:4);particles(e.x+e.w/2,e.y+e.h/2,e.big?20:12,['#ed6a45','#ffba69','#d6b7a1','#92323e'],1.15);if(e.hp<=0){e.dead=true;e.deathClock=clock;particles(e.x+e.w/2,e.y+e.h/2,28,['#a64042','#e69a59','#a1a09d'],1.6)}}
 function enemyWithinWeapon(e){
  const delta=(player.x+player.w/2)-(e.x+e.w/2);
  const diffY=Math.abs((player.y+player.h*.54)-(e.y+e.h*.52));
@@ -322,7 +322,7 @@ function drawEnemyWeaponAttacks(){
   if(elapsed<e.windup){
    // A readable windup warns the player before the attack becomes dangerous.
    g.save();g.globalAlpha=.32+Math.sin(clock*.25)**2*.30;
-   P(x+e.face*18,y-9,Math.max(1,reach-18),5,'#f6a968');
+   P(e.face>0?x+18:x-reach,y-9,Math.max(1,reach-18),5,'#f6a968');
    g.restore();
   }else if(active){
    g.save();g.strokeStyle=e.big?'#fa608a':'#f4be88';g.lineWidth=e.big?12:7;
