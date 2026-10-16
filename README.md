@@ -30,3 +30,12 @@ The game uses procedural Canvas 2D graphics. No assets or code from Dead Cells a
 - 6-frame idle, 10-frame run, 4-frame jump, 8-frame attack, 4-frame hurt and 8-frame death for each character type.
 - Stronger regression tests assert that every painted pixel lies inside its source frame.
 
+
+## Version 1.4 — weapons, shooting, traversable buildings
+
+- Enemies no longer damage the player by contact: heretics and Chaos Marines perform telegraphed melee attacks with an active weapon hit window and recovery cooldown.
+- Servitor receives a hand-mounted blaster, a dedicated touch button (✦) and projectile impact effects. Hold ✦ to shoot; keyboard X or K also fires.
+- Three Martian manufactorum buildings have traversable rooftops and exterior climbing platforms; some heretics patrol the roofs.
+- Enemy gait animation is slower with less bobbing and pauses when enemies attack.
+- Regression tests verify roofs, attack windup, absence of collision damage, projectile hits and enemy animation pacing.
+
