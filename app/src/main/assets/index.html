@@ -24,6 +24,7 @@ canvas{display:block;width:100vw;height:100vh;object-fit:fill;image-rendering:pi
 <div class="cluster"><button class="control" data-key="jump" aria-label="Прыжок">▲</button><button class="control" id="attack" data-key="attack" aria-label="Меч">⚔</button></div>
 </div>
 <button id="retry">ПОВТОРИТЬ</button>
+<script src="sprites.js"></script>
 <script>
 'use strict';
 const canvas=document.querySelector('#game'),g=canvas.getContext('2d',{alpha:false});
@@ -58,7 +59,7 @@ function particles(x,y,count,palette,force=1){
  for(let i=0;i<count;i++){let ang=rand(i*17+clock*71)*Math.PI*2,spd=(1+rand(i*33+clock*15)*4)*force;effects.push({x,y,vx:Math.cos(ang)*spd,vy:Math.sin(ang)*spd-1.1,life:18+rand(i*18+clock)*25,max:43,c:palette[Math.floor(rand(i*5+clock)*palette.length)],size:2+rand(i*7+clock)*3})}
  if(effects.length>140)effects.splice(0,effects.length-140);
 }
-function hurt(e,damage){e.hp-=damage;e.hit=12;shake=Math.max(shake,e.big?7:4);particles(e.x+e.w/2,e.y+e.h/2,e.big?20:12,['#ed6a45','#ffba69','#d6b7a1','#92323e'],1.15);if(e.hp<=0){e.dead=true;particles(e.x+e.w/2,e.y+e.h/2,28,['#a64042','#e69a59','#a1a09d'],1.6)}}
+function hurt(e,damage){e.hp-=damage;e.hit=12;shake=Math.max(shake,e.big?7:4);particles(e.x+e.w/2,e.y+e.h/2,e.big?20:12,['#ed6a45','#ffba69','#d6b7a1','#92323e'],1.15);if(e.hp<=0){e.dead=true;e.deathClock=clock;particles(e.x+e.w/2,e.y+e.h/2,28,['#a64042','#e69a59','#a1a09d'],1.6)}}
 function update(){
  clock++;
  for(const s of effects){s.x+=s.vx;s.y+=s.vy;s.vy+=.13;s.vx*=.97;s.life--}effects=effects.filter(s=>s.life>0);
@@ -175,30 +176,16 @@ function ground(){
  structure();
 }
 function sprite(e,type){
- const isPlayer=type==='player',marine=type==='marine',hurtFlash=e.hit>0,run=Math.abs(isPlayer?e.vx:Math.sin(e.walk)*2)>0.25;
- const phase=isPlayer?player.step:e.walk*3;
- const step=run?Math.round(Math.sin(phase)*4):0;
- const x=Math.round(e.x-view+(isPlayer?15:e.w/2)),y=Math.round(e.y),dir=isPlayer?player.facing:e.face;
- const sc=marine?1.45:1;
- g.save();g.translate(x,y);g.scale(dir*sc,sc);
- const steel=hurtFlash?'#f5c8ae':isPlayer?'#7b888c':marine?'#655269':'#854447';
- const bright=isPlayer?'#b8c2bc':marine?'#9c8494':'#c88676',dark='#201e2b',trim=isPlayer?'#b98858':marine?'#c5a66c':'#b05f4a';
- P(-9,30+step,8,19,dark);P(1,30-step,8,19,dark);
- P(-11,45+step,11,6,'#4e3b43');P(1,45-step,11,6,'#4e3b43');
- P(-12,11,24,26,steel);P(-10,13,4,20,bright);P(7,14,3,19,dark);
- P(-5,14,12,10,isPlayer?'#624b4e':marine?'#37283c':'#592d35');
- P(-4,15,5,4,trim);P(-9,37,18,4,dark);
- if(isPlayer){P(-13,-1,24,17,'#686f74');P(-6,-10,16,16,'#c4b6a4');P(2,-4,6,3,'#ff5634');P(-12,-9,5,15,'#58565b');P(-19,-3,6,19,'#493d41');P(8,16,10,20,'#7b7d80');P(9,19,6,12,'#b6b5a7');P(-22,17,8,18,'#45414b');P(-22,29,8,3,'#c89c6a');P(-3,29,7,5,'#d2aa64')}
- else if(marine){P(-14,-4,28,21,steel);P(-9,-16,18,14,'#8f8996');P(-7,-20,15,9,steel);P(0,-12,7,4,'#e75270');P(-18,5,8,14,bright);P(10,5,9,15,bright);P(-9,19,20,6,trim);P(-17,-12,7,8,'#9c6c6f');P(11,-12,7,8,'#9c6c6f')}
- else {P(-8,-7,17,15,'#bea18e');P(-11,-13,22,10,'#4b2838');P(-5,-2,10,3,'#ec6960');P(-14,14,7,18,'#543642');P(9,14,7,18,'#673c42');P(-18,28,7,6,bright)}
- P(-14,15,6,18,dark);P(-17,28,8,5,bright);
- P(12,14,7,20,steel);
- if(marine){P(19,12,15,7,dark);P(31,10,10,5,trim)}
- if(isPlayer){P(16,30,6,12,'#b4aba2');P(18,39,5,3,'#e7b87e')}
- g.restore();
- if(isPlayer){glow(x+dir*5,y+6,28,'#e14936',.6)}
- else glow(x+dir*4,y+(marine?10:3),marine?37:24,marine?'#eb4c69':'#ae4f54',.48);
- if(!isPlayer&&!e.dead&&e.hp<e.max){P(e.x-view,y-13,e.w,4,'#221b23');P(e.x-view,y-13,e.w*e.hp/e.max,4,'#ed7456')}
+ const kind=type==='player'?'servitor':type==='marine'?'marine':'heretic';
+ const sx=e.x-view+e.w/2, sy=e.y+e.h;
+ P(sx-(kind==='marine'?34:20),sy-2,kind==='marine'?68:40,5,'#100d1c77');
+ MarsSprites.draw(g,e,kind,view,player,clock);
+ if(kind==='servitor')glow(sx+player.facing*4,e.y+19,26,'#e14936',.48);
+ else if(!e.dead)glow(sx+e.face*5,e.y+(kind==='marine'?27:20),kind==='marine'?37:23,kind==='marine'?'#eb4c69':'#ae4f54',.35);
+ if(kind!=='servitor'&&!e.dead&&e.hp<e.max){
+  P(e.x-view,e.y-13,e.w,4,'#221b23');
+  P(e.x-view,e.y-13,e.w*e.hp/e.max,4,'#ed7456');
+ }
 }
 function slash(){
  if(player.attack<=0)return;
@@ -237,7 +224,7 @@ function draw(){
  sky();background();
  g.save();g.translate(Math.round((rand(clock*3)-.5)*shake),Math.round((rand(clock*5)-.5)*shake));
  ground();
- for(const e of enemies)if(!e.dead&&e.x-view>-80&&e.x-view<SW+80)sprite(e,e.big?'marine':'heretic');
+ for(const e of enemies)if((!e.dead||clock-e.deathClock<35)&&e.x-view>-100&&e.x-view<SW+100)sprite(e,e.big?'marine':'heretic');
  if(player.inv%7<4)sprite(player,'player');
  slash();
  for(const p of effects){g.globalAlpha=Math.max(0,p.life/p.max);P(p.x-view,p.y,p.size,p.size,p.c)}g.globalAlpha=1;
