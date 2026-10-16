@@ -24,6 +24,8 @@ jobs:
           gradle-version: '8.9'
       - name: Verify sprite frames and JavaScript
         run: node tools/verify_game.js
+      - name: Verify combat, projectiles and buildings
+        run: node tools/verify_gameplay.js
       - name: Build APK
         run: gradle --no-daemon assembleDebug
       - uses: actions/upload-artifact@v4
