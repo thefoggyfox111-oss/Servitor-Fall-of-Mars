@@ -13,8 +13,8 @@ const K={
  bone:'#d0b999',plasma:'#ff557d',rust:'#814b48'
 };
 const FRAMES={idle:6,run:10,jump:4,attack:8,hurt:4,death:8};
-const DIMENSIONS={servitor:[144,148],heretic:[128,146],marine:[208,194]};
-const FOOT_MARGIN=15;
+const DIMENSIONS={servitor:[192,192],heretic:[208,182],marine:[256,222]};
+const FOOT_MARGIN=56;
 const frames={};
 const TWO_PI=Math.PI*2;
 const q=(ctx,x,y,w,h,color)=>{ctx.fillStyle=color;ctx.fillRect(Math.round(x),Math.round(y),Math.max(1,Math.round(w)),Math.max(1,Math.round(h)));};
