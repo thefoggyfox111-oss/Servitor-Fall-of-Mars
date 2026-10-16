@@ -35,9 +35,9 @@ function pose(state,n,count){
  const dying=state==='death',wounded=state==='hurt';
  return {
   t,cyc,co,running,jumping,attacking,dying,wounded,
-  bob:running?Math.round(3*Math.abs(cyc)):state==='idle'?Math.round(n%3===0?1:0):0,
-  stride:running?Math.round(cyc*13):jumping?([-8,5,7,2][n]||0):0,
-  lean:running?Math.round(co*3):attacking?[-4,-6,2,6,9,6,2,0][n]:0,
+  bob:running?Math.round(1.5*Math.abs(cyc)):state==='idle'?Math.round(n%3===0?1:0):0,
+  stride:running?Math.round(cyc*10):jumping?([-8,5,7,2][n]||0):0,
+  lean:running?Math.round(co*2):attacking?[-4,-6,2,6,9,6,2,0][n]:0,
   swing:attacking?n/count:0,
   collapse:dying?Math.min(1,n/(count-1)):0
  };
@@ -275,13 +275,14 @@ function select(kind,entity,hero,clock){
   if(hero.attack>0)return ['attack',Math.min(FRAMES.attack-1,Math.floor((17-hero.attack)*FRAMES.attack/17))];
   if(hero.inv>37)return ['hurt',Math.floor((45-hero.inv)/2)%FRAMES.hurt];
   if(!hero.ground){const x=hero.vy<-4?0:hero.vy<0?1:hero.vy<6?2:3;return ['jump',x];}
-  if(Math.abs(hero.vx)>.52)return ['run',Math.floor(hero.step*1.8)%FRAMES.run];
+  if(Math.abs(hero.vx)>.52)return ['run',Math.floor(hero.step*.45)%FRAMES.run];
   return ['idle',Math.floor(clock/12)%FRAMES.idle];
  }
  if(entity.dead)return ['death',Math.max(0,Math.min(FRAMES.death-1,Math.floor((clock-entity.deathClock)/5)))];
  if(entity.hit>0)return ['hurt',Math.floor((12-entity.hit)/3)%FRAMES.hurt];
- if(Math.abs(entity.walk)>0)return ['run',Math.floor(entity.walk*8)%FRAMES.run];
- return ['idle',Math.floor(clock/12)%FRAMES.idle];
+ if(entity.attackTimer>0)return ['attack',Math.min(FRAMES.attack-1,Math.floor((entity.attackTotal-entity.attackTimer)*FRAMES.attack/entity.attackTotal))];
+ if(entity.moving)return ['run',Math.floor(entity.walk*2.8)%FRAMES.run];
+ return ['idle',Math.floor(clock/16)%FRAMES.idle];
 }
 function draw(g,entity,kind,camera,hero,clock){
  const [state,index]=select(kind,entity,hero,clock);
