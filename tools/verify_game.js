@@ -54,6 +54,7 @@ const sprites=win.MarsSprites;
 assert.ok(sprites,'MarsSprites must register');
 const expected={idle:6,run:10,jump:4,attack:8,hurt:4,death:8};
 let count=0;
+const violations=[];
 for(const kind of ['servitor','heretic','marine']){
  const [width,height]=sprites.dimensions[kind];
  const bottom=height-sprites.footMargin;
@@ -70,15 +71,16 @@ for(const kind of ['servitor','heretic','marine']){
    const minY=Math.min(...capture.tracks.map(t=>t[1]));
    const maxX=Math.max(...capture.tracks.map(t=>t[2]));
    const maxY=Math.max(...capture.tracks.map(t=>t[3]));
-   assert.ok(minX>=-.5&&maxX<=width+.5,kind+' '+state+' horizontal clipping: '+minX+'..'+maxX+' / '+width);
-   assert.ok(minY>=-.5&&maxY<=height+.5,kind+' '+state+' vertical clipping: '+minY+'..'+maxY+' / '+height);
-   if(state==='idle')assert.ok(maxY>bottom-12&&maxY<bottom+12,kind+' idle feet must reach pivot');
+   if(minX<-.5||maxX>width+.5)violations.push(kind+' '+state+' horizontal '+minX.toFixed(1)+'..'+maxX.toFixed(1)+' / '+width);
+   if(minY<-.5||maxY>height+.5)violations.push(kind+' '+state+' vertical '+minY.toFixed(1)+'..'+maxY.toFixed(1)+' / '+height);
+   if(state==='idle'&&(maxY<=bottom-12||maxY>=bottom+12))violations.push(kind+' idle foot anchor '+maxY.toFixed(1)+' vs '+bottom);
    signatures.push(capture.tracks.slice(0,100).map(t=>t.map(x=>Math.round(x)).join(',')).join(';'));
    count++;
   }
   assert.ok(new Set(signatures).size>1,kind+' '+state+' should animate, not repeat one image');
  }
 }
+assert.ok(!violations.length,'Sprite bounds issues: '+[...new Set(violations)].join(' | '));
 const spriteCtx={save(){},restore(){},translate(){},scale(){},drawImage(){this.drawn=true;},imageSmoothingEnabled:false};
 const hero={x:40,y:250,w:30,h:80,facing:1,attack:0,ground:true,vx:0,step:0,inv:0};
 sprites.draw(spriteCtx,hero,'servitor',0,hero,15);
