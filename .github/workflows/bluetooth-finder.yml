@@ -1,0 +1,42 @@
+name: Bluetooth Finder APK (temporary branch)
+on:
+  push:
+    branches: [bluetooth-finder-apk-build]
+    paths:
+      - 'bluetooth-finder-payload.b64'
+      - '.github/workflows/bluetooth-finder.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  bluetooth:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+      - name: Unpack Bluetooth Finder sources
+        run: |
+          python3 -m pip install --user brotli
+          python3 - <<'PY'
+          import base64,brotli,io,tarfile,pathlib
+          content=base64.b64decode(pathlib.Path('bluetooth-finder-payload.b64').read_text())
+          raw=brotli.decompress(content)
+          dest=pathlib.Path('BluetoothFinder')
+          dest.mkdir(exist_ok=True)
+          with tarfile.open(fileobj=io.BytesIO(raw)) as archive:
+              archive.extractall(dest,filter='data')
+          print('Extracted source files',len(raw))
+          PY
+      - name: Build debug APK
+        run: gradle --no-daemon --stacktrace -p BluetoothFinder assembleDebug
+      - uses: actions/upload-artifact@v4
+        with:
+          name: BluetoothFinder-v1.1-debug-APK
+          path: BluetoothFinder/app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
