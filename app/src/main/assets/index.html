@@ -36,8 +36,8 @@ const spawnXs=[335,620,926,1210,1530,1870,2160,2440,2780,3070];
 let player,enemies,effects,flames,view,shake,clock,won,lost,lastTime=0,acc=0,noticeTime=240;
 function rand(i){let n=Math.sin(i*127.1+78.31)*43758.5453123;return n-Math.floor(n)}
 function reset(){
- player={x:65,y:290,w:30,h:54,vx:0,vy:0,hp:100,facing:1,ground:false,coyote:0,attack:0,cool:0,inv:0,step:0};
- enemies=spawnXs.map((x,i)=>({x,y:FLOOR-(i%3===2?76:53),w:i%3===2?45:27,h:i%3===2?76:53,big:i%3===2,hp:i%3===2?5:2,max:i%3===2?5:2,home:x,face:-1,hit:0,walk:0,cd:0,dead:false}));
+ player={x:65,y:290,w:30,h:96,vx:0,vy:0,hp:100,facing:1,ground:false,coyote:0,attack:0,cool:0,inv:0,step:0};
+ enemies=spawnXs.map((x,i)=>({x,y:FLOOR-(i%3===2?148:110),w:i%3===2?45:27,h:i%3===2?148:110,big:i%3===2,hp:i%3===2?5:2,max:i%3===2?5:2,home:x,face:-1,hit:0,walk:0,cd:0,dead:false}));
  effects=[];flames=[];view=0;shake=0;clock=0;won=false;lost=false;noticeTime=260;restartBtn.style.display='none';
 }
 reset();
@@ -74,7 +74,7 @@ function update(){
  if(Math.abs(player.vx)>.2)player.facing=Math.sign(player.vx);
  player.x=Math.max(2,Math.min(LENGTH-50,player.x+player.vx));
  if(player.ground)player.coyote=7;else player.coyote=Math.max(0,player.coyote-1);
- if(keys.jump&&player.coyote>0){player.vy=-12.1;player.ground=false;player.coyote=0;particles(player.x+14,player.y+53,8,['#c26b43','#a48b77'])}
+ if(keys.jump&&player.coyote>0){player.vy=-12.1;player.ground=false;player.coyote=0;particles(player.x+14,player.y+player.h,8,['#c26b43','#a48b77'])}
  player.vy=Math.min(15,player.vy+.62);
  let previousY=player.y;player.y+=player.vy;player.ground=false;
  for(const a of landings){if(player.x+player.w>a.x+4&&player.x<a.x+a.w-4&&previousY+player.h<=a.y+12&&player.y+player.h>=a.y&&player.vy>=0){player.y=a.y-player.h;player.vy=0;player.ground=true;break}}
@@ -84,9 +84,9 @@ function update(){
  if(player.attack>0)player.attack--;
  if(keys.attack&&player.cool===0){
   player.attack=17;player.cool=24;shake=Math.max(shake,2);
-  particles(player.x+player.w/2+player.facing*38,player.y+20,5,['#ffe5b7','#ff9a50'],.6);
-  for(const e of enemies){if(e.dead)continue;let dist=(e.x+e.w/2)-(player.x+15),dy=(e.y+e.h/2)-(player.y+27);
-    if(Math.abs(dist)<83&&Math.abs(dy)<75&&dist*player.facing>-20)hurt(e,1)}
+  particles(player.x+player.w/2+player.facing*43,player.y+player.h/2,5,['#ffe5b7','#ff9a50'],.6);
+  for(const e of enemies){if(e.dead)continue;let dist=(e.x+e.w/2)-(player.x+15),dy=(e.y+e.h/2)-(player.y+player.h/2);
+    if(Math.abs(dist)<90&&Math.abs(dy)<Math.max(82,(player.h+e.h)*.52)&&dist*player.facing>-20)hurt(e,1)}
  }
  for(const e of enemies){
   if(e.dead)continue;
@@ -95,10 +95,10 @@ function update(){
   if(awake){e.face=dx<0?-1:1;e.x+=e.face*(e.big?.62:1.05)*(e.hit>0?.25:1)}
   else {e.x+=e.face*.30;if(Math.abs(e.x-e.home)>68)e.face*=-1}
   e.walk+=.12;
-  if(player.inv===0&&Math.abs(player.x+15-(e.x+e.w/2))<(e.big?40:28)&&Math.abs(player.y+25-(e.y+e.h/2))<55){
+  if(player.inv===0&&Math.abs(player.x+15-(e.x+e.w/2))<(e.big?40:28)&&Math.abs(player.y+player.h/2-(e.y+e.h/2))<(player.h+e.h)*.40){
     player.hp=Math.max(0,player.hp-(e.big?24:12));player.inv=45;shake=10;
     player.vx=(player.x<e.x?-1:1)*5;player.vy=-4;
-    particles(player.x+15,player.y+28,18,['#ef563e','#edb95f','#bba091']);
+    particles(player.x+15,player.y+player.h/2,18,['#ef563e','#edb95f','#bba091']);
     if(player.hp===0){lost=true;restartBtn.style.display='block'}
   }
  }
@@ -180,8 +180,8 @@ function sprite(e,type){
  const sx=e.x-view+e.w/2, sy=e.y+e.h;
  P(sx-(kind==='marine'?34:20),sy-2,kind==='marine'?68:40,5,'#100d1c77');
  MarsSprites.draw(g,e,kind,view,player,clock);
- if(kind==='servitor')glow(sx+player.facing*4,e.y+19,26,'#e14936',.48);
- else if(!e.dead)glow(sx+e.face*5,e.y+(kind==='marine'?27:20),kind==='marine'?37:23,kind==='marine'?'#eb4c69':'#ae4f54',.35);
+ if(kind==='servitor')glow(sx+player.facing*4,e.y+e.h-91,26,'#e14936',.48);
+ else if(!e.dead)glow(sx+e.face*5,e.y+e.h-(kind==='marine'?116:87),kind==='marine'?37:23,kind==='marine'?'#eb4c69':'#ae4f54',.35);
  if(kind!=='servitor'&&!e.dead&&e.hp<e.max){
   P(e.x-view,e.y-13,e.w,4,'#221b23');
   P(e.x-view,e.y-13,e.w*e.hp/e.max,4,'#ed7456');
@@ -190,7 +190,7 @@ function sprite(e,type){
 function slash(){
  if(player.attack<=0)return;
  const t=1-player.attack/17,angle=-1.15+t*2.45;
- const cx=player.x-view+15+player.facing*16,cy=player.y+26;
+ const cx=player.x-view+15+player.facing*16,cy=player.y+player.h/2;
  g.save();g.translate(cx,cy);g.scale(player.facing,1);
  g.globalCompositeOperation='screen';g.strokeStyle='#ffe3b2';g.lineWidth=9;g.shadowColor='#ff904c';g.shadowBlur=25;
  g.beginPath();g.arc(0,0,58,angle-.40,angle+.32);g.stroke();
