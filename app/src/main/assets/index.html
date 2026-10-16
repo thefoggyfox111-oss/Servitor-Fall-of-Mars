@@ -141,6 +141,7 @@ function worldObject(x){
  P(x+6,y-165,5,8,'#ffb268');glow(x+9,y-160,32,'#e9843d',.4);
 }
 function structure(){
+ g.save();g.translate(-view,0);
  // A monumental temple built into the end of the level.
  const x=3260,y=192;
  P(x-40,190,175,260,'#241f2b');
@@ -153,6 +154,7 @@ function structure(){
  P(x-28,186,149,18,'#ba8a60');P(x-2,169,94,18,'#6a4a49');
  P(x+36,138,16,36,'#7d5f57');P(x+27,127,34,11,'#c18a62');
  glow(x+43,310,110,'#f0783e',.3);
+ g.restore();
 }
 function ground(){
  for(let a of landings){
