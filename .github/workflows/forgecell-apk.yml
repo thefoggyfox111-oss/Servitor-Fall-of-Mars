@@ -64,6 +64,8 @@ jobs:
           python3 -m pip install --quiet pillow
           python3 ForgeCell_Engine/tools/generate_fallback_environment.py
           test -s ForgeCell_Engine/android/app/src/main/assets/environment.fcex
+      - name: Restore artwork supplied for the first demo level
+        run: python3 forgecell/decode_reference_atlas_0165.py
       - name: Verify source archive
         run: |
           echo '043bfff795aca81305abbe4de66c7bc9d23a83c424d9cfdbfafbc39084983bbc  forgecell/ForgeCell_Engine_0.15.0_source.zip' | sha256sum -c -
