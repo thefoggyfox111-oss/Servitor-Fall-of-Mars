@@ -1,0 +1,41 @@
+name: ForgeCell Engine Android APK
+on:
+  push:
+    branches:
+      - forgecell-engine-v0.15.0
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  build-apk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - name: Unpack ForgeCell Engine 0.15.0
+        run: unzip -q forgecell/ForgeCell_Engine_0.15.0_source.zip
+      - name: Verify source archive
+        run: |
+          echo '6b53c04f687b6a6d41c5f848c5890c9294ffaaf11293313f45804fb0f711c4c2  forgecell/ForgeCell_Engine_0.15.0_source.zip' | sha256sum -c -
+          test -f ForgeCell_Engine/android/app/src/main/cpp/CMakeLists.txt
+          test -f ForgeCell_Engine/android/app/src/main/assets/atlas.rgba
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+      - name: Install Android dependencies
+        run: sdkmanager 'platforms;android-35' 'build-tools;35.0.0' 'ndk;27.2.12479018' 'cmake;3.22.1'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.13'
+      - name: Assemble ForgeCell debug APK
+        working-directory: ForgeCell_Engine/android
+        run: gradle --no-daemon --stacktrace :app:assembleDebug
+      - name: Verify APK native library and assets
+        run: python3 ForgeCell_Engine/tools/check_apk.py ForgeCell_Engine/android/app/build/outputs/apk/debug/app-debug.apk
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ForgeCell-0.15.0-debug-apk
+          path: ForgeCell_Engine/android/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
