@@ -14,6 +14,22 @@ jobs:
       - uses: actions/checkout@v4
       - name: Unpack ForgeCell Engine 0.15.0
         run: unzip -q forgecell/ForgeCell_Engine_0.15.0_source.zip
+      - name: Fix GameActivity launch theme and enable emulator ABI
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          root=Path("ForgeCell_Engine/android/app")
+          styles=root/"src/main/res/values/styles.xml"
+          data=styles.read_text()
+          old='parent="@android:style/Theme.Material.NoActionBar"'
+          assert old in data, "Expected obsolete theme was not found"
+          styles.write_text(data.replace(old,'parent="Theme.AppCompat.DayNight.NoActionBar"'))
+          gradle=root/"build.gradle.kts"
+          text=gradle.read_text()
+          old='abiFilters += "arm64-v8a"'
+          assert old in text, "Expected ABI declaration was not found"
+          gradle.write_text(text.replace(old,'abiFilters += listOf("arm64-v8a", "x86_64")'))
+          PY
       - name: Verify source archive
         run: |
           echo '043bfff795aca81305abbe4de66c7bc9d23a83c424d9cfdbfafbc39084983bbc  forgecell/ForgeCell_Engine_0.15.0_source.zip' | sha256sum -c -
@@ -40,8 +56,37 @@ jobs:
         run: gradle --no-daemon --stacktrace :app:assembleDebug
       - name: Verify APK native library and assets
         run: python3 ForgeCell_Engine/tools/check_apk.py ForgeCell_Engine/android/app/build/outputs/apk/debug/app-debug.apk
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Smoke test Android startup
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 30
+          target: google_apis
+          arch: x86_64
+          emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim
+          script: |
+            adb install ForgeCell_Engine/android/app/build/outputs/apk/debug/app-debug.apk
+            adb logcat -c
+            adb shell am start -W -n com.forgecell.engine/.MainActivity
+            sleep 12
+            adb logcat -d > forgecell-startup-logcat.txt
+            if ! adb shell pidof com.forgecell.engine; then
+              grep -E 'FATAL EXCEPTION|AndroidRuntime|ForgeCell|Fatal signal' forgecell-startup-logcat.txt | tail -100 || true
+              exit 1
+            fi
+            echo 'Startup smoke test passed: application process remains alive'
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ForgeCell-startup-logcat
+          path: forgecell-startup-logcat.txt
+          if-no-files-found: ignore
       - uses: actions/upload-artifact@v4
         with:
-          name: ForgeCell-0.15.0-debug-apk
+          name: ForgeCell-0.15.1-debug-apk
           path: ForgeCell_Engine/android/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
