@@ -4,6 +4,7 @@ on:
     branches:
       - forgecell-engine-v0.15.0
       - forgecell-engine-v0.15.2
+      - forgecell-engine-v0.16.0
   workflow_dispatch:
 permissions:
   contents: read
@@ -33,11 +34,18 @@ jobs:
           PY
       - name: Fix GameActivity JNI startup and bump version
         run: python3 forgecell/patch_startup_0152.py
+      - name: Install authored Level 01 geometry, enemies and objects
+        run: python3 forgecell/apply_level_0160.py
       - name: Verify source archive
         run: |
           echo '043bfff795aca81305abbe4de66c7bc9d23a83c424d9cfdbfafbc39084983bbc  forgecell/ForgeCell_Engine_0.15.0_source.zip' | sha256sum -c -
           test -f ForgeCell_Engine/android/app/src/main/cpp/CMakeLists.txt
           test -f ForgeCell_Engine/android/app/src/main/assets/atlas.rgba
+      - name: Verify updated Level 01 assets and native tests
+        run: |
+          cmake -S ForgeCell_Engine -B forgecell-host-build -G Ninja -DCMAKE_BUILD_TYPE=Debug -DFORGECELL_BUILD_TESTS=ON
+          cmake --build forgecell-host-build --parallel 4
+          ctest --test-dir forgecell-host-build --output-on-failure
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -95,13 +103,13 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: ForgeCell-0.15.2-debug-apk
+          name: ForgeCell-0.16.0-level01-debug-apk
           path: ForgeCell_Engine/android/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
 
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: ForgeCell-smoke-screenshot
+          name: ForgeCell-0.16.0-smoke-screenshot
           path: forgecell-smoke.png
           if-no-files-found: ignore
