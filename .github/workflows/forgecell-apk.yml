@@ -3,6 +3,7 @@ on:
   push:
     branches:
       - forgecell-engine-v0.15.0
+      - forgecell-engine-v0.15.2
   workflow_dispatch:
 permissions:
   contents: read
@@ -30,6 +31,8 @@ jobs:
           assert old in text, "Expected ABI declaration was not found"
           gradle.write_text(text.replace(old,'abiFilters += listOf("arm64-v8a", "x86_64")'))
           PY
+      - name: Fix GameActivity JNI startup and bump version
+        run: python3 forgecell/patch_startup_0152.py
       - name: Verify source archive
         run: |
           echo '043bfff795aca81305abbe4de66c7bc9d23a83c424d9cfdbfafbc39084983bbc  forgecell/ForgeCell_Engine_0.15.0_source.zip' | sha256sum -c -
@@ -54,6 +57,11 @@ jobs:
       - name: Assemble ForgeCell debug APK
         working-directory: ForgeCell_Engine/android
         run: gradle --no-daemon --stacktrace :app:assembleDebug
+      - name: Verify GameActivity JNI entrypoint is exported
+        run: |
+          set -e
+          SO="ForgeCell_Engine/android/app/build/intermediates/cxx/Debug"
+          find "$SO" -name libforgecell.so | head -1 | xargs -r readelf -Ws | grep -F Java_com_google_androidgamesdk_GameActivity_initializeNativeCode
       - name: Verify APK native library and assets
         run: python3 ForgeCell_Engine/tools/check_apk.py ForgeCell_Engine/android/app/build/outputs/apk/debug/app-debug.apk
       - name: Enable KVM
@@ -74,10 +82,9 @@ jobs:
             adb shell am start -W -n com.forgecell.engine/.MainActivity
             sleep 12
             adb logcat -d > forgecell-startup-logcat.txt
-            if ! adb shell pidof com.forgecell.engine; then
-              grep -E 'FATAL EXCEPTION|AndroidRuntime|ForgeCell|Fatal signal' forgecell-startup-logcat.txt | tail -100 || true
-              exit 1
-            fi
+            adb shell pidof com.forgecell.engine || (grep -E 'FATAL EXCEPTION|AndroidRuntime|ForgeCell|Fatal signal' forgecell-startup-logcat.txt | tail -100; exit 1)
+            adb shell screencap -p /sdcard/forgecell-smoke.png
+            adb pull /sdcard/forgecell-smoke.png forgecell-smoke.png
             echo 'Startup smoke test passed: application process remains alive'
       - uses: actions/upload-artifact@v4
         if: always()
@@ -86,7 +93,15 @@ jobs:
           path: forgecell-startup-logcat.txt
           if-no-files-found: ignore
       - uses: actions/upload-artifact@v4
+        if: always()
         with:
-          name: ForgeCell-0.15.1-debug-apk
+          name: ForgeCell-0.15.2-debug-apk
           path: ForgeCell_Engine/android/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ForgeCell-smoke-screenshot
+          path: forgecell-smoke.png
+          if-no-files-found: ignore
