@@ -1,0 +1,540 @@
+--- a/core/include/forge/TouchControls.hpp
++++ b/core/include/forge/TouchControls.hpp
+@@ -26,6 +26,7 @@
+     void pointerUp(int32_t id); // compatibility for callers lacking release coordinates
+     void clear();
+     void setInventoryOpen(bool open) {inventoryOpen_=open;}
++    void setPlayerDead(bool dead) {playerDead_=dead;}
+     void setDead(bool dead) {dead_=dead;}
+     Input sample(); // edges consumed only once, even with multiple simulation ticks
+     std::optional<InventoryDrag> inventoryDrag() const; // read-only pointer preview
+@@ -35,6 +36,7 @@
+     float width_ = 640, height_ = 360;
+     std::array<TouchPoint, 16> pointers_ {};
+     bool inventoryOpen_ = false;
++    bool playerDead_ = false;
+     bool dead_ = false;
+     int selectedCellPending_ = -1;
+     int moveFromPending_=-1, moveToPending_=-1, equipSlotPending_=-1;
+--- a/core/src/TouchControls.cpp
++++ b/core/src/TouchControls.cpp
+@@ -35,6 +35,10 @@
+     if(std::abs(x-restart.x)<24 && std::abs(y-restart.y)<20)return Control::Restart;
+     // Match the large RELOAD button drawn on the death overlay.
+     if(dead_ && std::abs(x-width_*.5f)<64.f && y>=164.f && y<=198.f)return Control::Restart;
++    if(playerDead_) {
++        if(std::abs(x-width_*.5f)<70.f && std::abs(y-181.f)<24.f)return Control::Restart;
++        return Control::None;
++    }
+     const auto inventory=buttonCenter(Control::Inventory,width_,height_);
+     if(std::abs(x-inventory.x)<30 && std::abs(y-inventory.y)<26)return Control::Inventory;
+     if(inventoryOpen_) {
+--- a/core/include/forge/Simulation.hpp
++++ b/core/include/forge/Simulation.hpp
+@@ -120,6 +120,7 @@
+     size_t inventorySelected = 0;
+     bool inventorySelectionArmed = false; // first tap previews; second tap equips
+     bool dead = false;
++    bool fellToDeath = false;
+     float deathTimer = 0.0f;
+     void tick(float dt, const Input& input);
+     void reset();
+--- a/core/src/Simulation.cpp
++++ b/core/src/Simulation.cpp
+@@ -149,6 +149,7 @@
+ 
+     if(player.pos.y > world.height + 56.0f) {
+         dead = true;
++        fellToDeath = true;
+         deathTimer = 0.0f;
+         player.health = 0;
+         player.vel = {};
+@@ -178,6 +179,7 @@
+     if(input.interactPressed)combat.collectNearby(player);
+     if(player.health<=0) {
+         dead = true;
++        fellToDeath = false;
+         deathTimer = 0.0f;
+         player.vel = {};
+     }
+--- a/android/app/src/main/cpp/android_main.cpp
++++ b/android/app/src/main/cpp/android_main.cpp
+@@ -12,6 +12,7 @@
+ #include <EGL/egl.h>
+ #include <EGL/eglext.h>
+ #include <chrono>
++#include <cstdio>
+ #include <algorithm>
+ #include <cstdio>
+ #include <memory>
+@@ -293,7 +294,10 @@
+                 touch.setDead(false);
+                 return;
+             }
++            const bool wasDead=game.dead;
+             game.tick(dt,input);
++            if(game.dead && !wasDead) touch.clear();
++            touch.setPlayerDead(game.dead);
+             touch.setInventoryOpen(game.inventoryOpen);
+             touch.setDead(game.dead);
+         });
+--- a/android/app/src/main/cpp/GlRenderer.hpp
++++ b/android/app/src/main/cpp/GlRenderer.hpp
+@@ -15,10 +15,10 @@
+     float viewWidth() const {return viewWidth_;}
+     void render(const Simulation& simulation, float interpolation, const TouchControls* touch=nullptr);
+ private:
+-    struct Vertex {float x, y, u, v, r, g, b, a;};
++    struct Vertex {float x, y, u, v, r, g, b, a, textureKind;};
+     std::vector<Vertex> vertices_;
+-    GLuint program_ = 0, texture_ = 0, vbo_ = 0, vao_ = 0;
+-    GLint resolutionUniform_ = -1, atlasUniform_ = -1;
++    GLuint program_ = 0, texture_ = 0, environmentTexture_ = 0, vbo_ = 0, vao_ = 0;
++    GLint resolutionUniform_ = -1, atlasUniform_ = -1, environmentUniform_ = -1;
+     size_t vertexGpuCapacity_ = 0;
+     int pixelWidth_ = 640, pixelHeight_ = 360;
+     float viewWidth_ = 640;
+@@ -27,6 +27,8 @@
+     void quad(float x, float y, float w, float h, float u0, float v0, float u1, float v1,
+               float r, float g, float b, float alpha);
+     void rect(float x, float y, float w, float h, float r, float g, float b, float alpha = 1);
++    void envRect(float x,float y,float w,float h,float tx,float ty,float tw,float th,float alpha=1.f);
++    void worldEnvRect(float x,float y,float w,float h,float tx,float ty,float tw,float th,float alpha=1.f);
+     void worldRect(float x, float y, float w, float h, float r, float g, float b, float alpha = 1);
+     void sprite(float x, float y, int frame, Animation animation, bool flip,
+                 float red=1.0f,float green=1.0f,float blue=1.0f,float alpha=1.0f,
+--- a/android/app/src/main/cpp/GlRenderer.cpp
++++ b/android/app/src/main/cpp/GlRenderer.cpp
+@@ -5,6 +5,8 @@
+ #include <cstddef>
+ #include <cstring>
+ #include <string>
++#include <cstdint>
++#include <zlib.h>
+ 
+ namespace forge {
+ namespace {
+@@ -14,22 +16,27 @@
+ layout(location=0) in vec2 aPos;
+ layout(location=1) in vec2 aUv;
+ layout(location=2) in vec4 aColor;
++layout(location=3) in float aTextureKind;
+ uniform vec2 uResolution;
+ out vec2 vUv;
+ out vec4 vColor;
++flat out int vTextureKind;
+ void main() {
+     vec2 p = (aPos / uResolution) * 2.0 - 1.0;
+     gl_Position = vec4(p.x, -p.y, 0.0, 1.0);
+     vUv = aUv;
+     vColor = aColor;
++    vTextureKind = int(aTextureKind + 0.5);
+ })";
+ const char* kFragmentShader = R"(#version 300 es
+ precision mediump float;
+ in vec2 vUv;
+ in vec4 vColor;
++flat in int vTextureKind;
+ uniform sampler2D uAtlas;
++uniform sampler2D uEnvironment;
+ out vec4 fragColor;
+-void main() {fragColor = texture(uAtlas, vUv) * vColor;}
++void main() {fragColor = (vTextureKind==1 ? texture(uEnvironment, vUv) : texture(uAtlas, vUv)) * vColor;}
+ )";
+ GLuint compile(GLenum kind, const char* source) {
+     GLuint id = glCreateShader(kind);
+@@ -60,6 +67,7 @@
+     if (!linked) { release(); return false; }
+     resolutionUniform_ = glGetUniformLocation(program_,"uResolution");
+     atlasUniform_ = glGetUniformLocation(program_,"uAtlas");
++    environmentUniform_ = glGetUniformLocation(program_,"uEnvironment");
+     glGenTextures(1,&texture_);
+     glBindTexture(GL_TEXTURE_2D,texture_);
+     glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MIN_FILTER,GL_NEAREST);
+@@ -94,6 +102,37 @@
+     glPixelStorei(GL_UNPACK_ALIGNMENT,1);
+     glTexImage2D(GL_TEXTURE_2D,0,GL_RGBA8,ATLAS_W,ATLAS_H,0,GL_RGBA,GL_UNSIGNED_BYTE,bytes+8);
+     AAsset_close(asset);
++    // Optional high-detail environment atlas uses zlib packed RGBA, supplied
++    // from the user's Mars, metal tile, Gothic arch and factory-object references.
++    AAsset* background=AAssetManager_open(assets,"environment.fcex",AASSET_MODE_BUFFER);
++    if(background) {
++        const auto size=static_cast<size_t>(AAsset_getLength(background));
++        const auto* bytes=static_cast<const unsigned char*>(AAsset_getBuffer(background));
++        if(bytes && size>=12 && std::memcmp(bytes,"FCEX",4)==0) {
++            const unsigned width=unsigned(bytes[4]) | unsigned(bytes[5])<<8;
++            const unsigned height=unsigned(bytes[6]) | unsigned(bytes[7])<<8;
++            const unsigned rawSize=unsigned(bytes[8]) | unsigned(bytes[9])<<8 |
++                                   unsigned(bytes[10])<<16 | unsigned(bytes[11])<<24;
++            if(width==1024 && height==1024 && rawSize==1024u*1024u*4u) {
++                std::vector<unsigned char> rgba(rawSize);
++                uLongf outputLength=rawSize;
++                if(uncompress(rgba.data(),&outputLength,bytes+12,size-12)==Z_OK && outputLength==rawSize) {
++                    glGenTextures(1,&environmentTexture_);
++                    glActiveTexture(GL_TEXTURE1);
++                    glBindTexture(GL_TEXTURE_2D,environmentTexture_);
++                    glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MIN_FILTER,GL_NEAREST);
++                    glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MAG_FILTER,GL_NEAREST);
++                    glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_WRAP_S,GL_CLAMP_TO_EDGE);
++                    glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_WRAP_T,GL_CLAMP_TO_EDGE);
++                    glPixelStorei(GL_UNPACK_ALIGNMENT,1);
++                    glTexImage2D(GL_TEXTURE_2D,0,GL_RGBA8,width,height,0,GL_RGBA,GL_UNSIGNED_BYTE,rgba.data());
++                    glActiveTexture(GL_TEXTURE0);
++                    __android_log_print(ANDROID_LOG_INFO,"ForgeCell","Environment atlas loaded: %ux%u",width,height);
++                }
++            }
++        }
++        AAsset_close(background);
++    }
+     glGenBuffers(1,&vbo_);
+     glGenVertexArrays(1,&vao_);
+     glBindVertexArray(vao_);
+@@ -103,6 +142,7 @@
+     glEnableVertexAttribArray(0); glVertexAttribPointer(0,2,GL_FLOAT,GL_FALSE,sizeof(Vertex),(void*)0);
+     glEnableVertexAttribArray(1); glVertexAttribPointer(1,2,GL_FLOAT,GL_FALSE,sizeof(Vertex),(void*)(2*sizeof(float)));
+     glEnableVertexAttribArray(2); glVertexAttribPointer(2,4,GL_FLOAT,GL_FALSE,sizeof(Vertex),(void*)(4*sizeof(float)));
++    glEnableVertexAttribArray(3); glVertexAttribPointer(3,1,GL_FLOAT,GL_FALSE,sizeof(Vertex),(void*)(8*sizeof(float)));
+     glBindVertexArray(0);
+     glEnable(GL_BLEND);
+     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+@@ -113,9 +153,10 @@
+     if(vbo_) glDeleteBuffers(1,&vbo_);
+     if(vao_) glDeleteVertexArrays(1,&vao_);
+     if(texture_) glDeleteTextures(1,&texture_);
++    if(environmentTexture_) glDeleteTextures(1,&environmentTexture_);
+     if(program_) glDeleteProgram(program_);
+-    vbo_=vao_=texture_=program_=0;
+-    vertexGpuCapacity_=0;resolutionUniform_=atlasUniform_=-1;
++    vbo_=vao_=texture_=environmentTexture_=program_=0;
++    vertexGpuCapacity_=0;resolutionUniform_=atlasUniform_=environmentUniform_=-1;
+     vertices_.clear();
+ }
+ void GlRenderer::resize(int width, int height) {
+@@ -126,12 +167,23 @@
+ }
+ void GlRenderer::quad(float x,float y,float w,float h,float u0,float v0,float u1,float v1,
+                       float r,float g,float b,float alpha) {
+-    Vertex tl{x,y,u0,v0,r,g,b,alpha}, tr{x+w,y,u1,v0,r,g,b,alpha};
+-    Vertex bl{x,y+h,u0,v1,r,g,b,alpha}, br{x+w,y+h,u1,v1,r,g,b,alpha};
++    Vertex tl{x,y,u0,v0,r,g,b,alpha,0}, tr{x+w,y,u1,v0,r,g,b,alpha,0};
++    Vertex bl{x,y+h,u0,v1,r,g,b,alpha,0}, br{x+w,y+h,u1,v1,r,g,b,alpha,0};
+     vertices_.insert(vertices_.end(),{tl,bl,tr,tr,bl,br});
+ }
+ void GlRenderer::rect(float x,float y,float w,float h,float r,float g,float b,float alpha) {
+     quad(x,y,w,h,U_WHITE,V_WHITE,U_WHITE,V_WHITE,r,g,b,alpha);
++}
++void GlRenderer::envRect(float x,float y,float w,float h,float tx,float ty,float tw,float th,float alpha) {
++    if(!environmentTexture_)return;
++    constexpr float atlas=1024.f;
++    const float u0=tx/atlas,v0=ty/atlas,u1=(tx+tw)/atlas,v1=(ty+th)/atlas;
++    Vertex tl{x,y,u0,v0,1,1,1,alpha,1}, tr{x+w,y,u1,v0,1,1,1,alpha,1};
++    Vertex bl{x,y+h,u0,v1,1,1,1,alpha,1}, br{x+w,y+h,u1,v1,1,1,1,alpha,1};
++    vertices_.insert(vertices_.end(),{tl,bl,tr,tr,bl,br});
++}
++void GlRenderer::worldEnvRect(float x,float y,float w,float h,float tx,float ty,float tw,float th,float alpha) {
++    envRect(x-camera_.x+viewWidth_*.5f,y-camera_.y+180.f,w,h,tx,ty,tw,th,alpha);
+ }
+ void GlRenderer::worldRect(float x,float y,float w,float h,float r,float g,float b,float alpha) {
+     rect(x-camera_.x+viewWidth_*0.5f,y-camera_.y+180.0f,w,h,r,g,b,alpha);
+@@ -153,6 +205,18 @@
+          flip?u1:u0,v0,flip?u0:u1,v1,red,green,blue,alpha);
+ }
+ void GlRenderer::drawParallax(const Simulation& s) {
++    if(environmentTexture_) {
++        // The concept art becomes the actual far background, not a generated approximation.
++        // Camera pans through a slightly wider source frame for subtle depth.
++        const float pan=std::clamp(camera_.x*0.02f,0.f,48.f);
++        envRect(0,0,viewWidth_,360,pan,0,656,396,1.f);
++        // Separate semi-transparent cathedral layer travels slower than gameplay solids.
++        const float drift=std::fmod(camera_.x*.12f,352.f);
++        for(float x=-352.f-drift;x<viewWidth_+352.f;x+=352.f)
++            envRect(x,74.f,360.f,262.f,0,404,704,396,.30f);
++        if(s.player.pos.x<1350)rect(0,0,viewWidth_,360,.015f,.11f,.14f,.20f);
++        return;
++    }
+     // Four visual chapters share the same batched rectangle pipeline: no extra
+     // textures, FBOs or draw calls are required by this environment pass.
+     const float left = camera_.x - viewWidth_ * .5f;
+@@ -271,6 +335,19 @@
+         worldRect(solid.x,solid.y,solid.w,solid.h,.105f,.119f,.143f,.98f);
+         worldRect(solid.x+3,solid.y+4,std::max(0.f,solid.w-6),std::max(0.f,solid.h-7),
+                   .17f,.18f,.195f,.98f);
++        if(environmentTexture_) {
++            // Tiled plates line up with the original collision rectangles.
++            const float left=solid.x+32.f*std::floor(std::max(0.f,camera_.x-viewWidth_*.5f-36.f-solid.x)/32.f);
++            const float right=std::min(solid.x+solid.w,camera_.x+viewWidth_*.5f+36);
++            const float top=solid.y;
++            const float bottom=std::min(solid.y+solid.h,solid.y+128.f);
++            for(float yy=top;yy<bottom;yy+=32.f)for(float xx=left;xx<right;xx+=32.f) {
++                const float w=std::min(32.f,right-xx),h=std::min(32.f,bottom-yy);
++                const int type=(static_cast<int>(xx/32)+static_cast<int>(yy/32))&3;
++                worldEnvRect(xx,yy,w,h,712.f+type*76.f,2.f,72.f*w/32.f,72.f*h/32.f,.94f);
++            }
++        }
++
+         for(float tx=solid.x+8;tx+6<solid.x+solid.w;tx+=31) {
+             worldRect(tx,solid.y+3,1,std::max(1.f,solid.h-5),.065f,.083f,.103f,.67f);
+             worldRect(tx+4,solid.y+5,2,2,.54f,.40f,.24f,.85f);
+@@ -303,6 +380,13 @@
+         worldRect(p.x,p.y+3,p.w,p.h,.12f,.14f,.17f,.94f);
+         worldRect(p.x-2,p.y,p.w+4,5,.74f,.49f,.24f,.99f);
+         worldRect(p.x,p.y+5,p.w,2,.30f,.27f,.22f,.98f);
++        if(environmentTexture_) {
++            for(float xx=p.x;xx<p.x+p.w;xx+=54.f) {
++                const float w=std::min(54.f,p.x+p.w-xx);
++                worldEnvRect(xx,p.y-3,w,21.f,712.f,94.f,288.f*w/54.f,68.f,.98f);
++            }
++        }
++
+         for(float j=p.x+7;j<p.x+p.w-5;j+=15.f) {
+             worldRect(j,p.y+2,3,2,.16f,.13f,.12f,.99f);
+             worldRect(j,p.y+8,2,4,.43f,.32f,.19f,.80f);
+@@ -334,6 +418,14 @@
+     for(const auto& entry : s.objects.entries()) {
+         const auto& object=entry.value;
+         if(std::abs(object.x-camera_.x)>viewWidth_*.5f+object.radius)continue;
++        if(environmentTexture_) {
++            if(object.kind==WorldObjectKind::Crate) {
++                if(object.health>0)worldEnvRect(object.x-21.f,object.y-42.f,42.f,42.f,712.f,192.f,142.f,142.f);
++            } else {
++                worldEnvRect(object.x-24.f,object.y-73.f,48.f,73.f,712.f,574.f,142.f,138.f);
++            }
++            continue;
++        }
+         if(object.kind==WorldObjectKind::Crate) {
+             if(object.health<=0)continue;
+             const float side=object.radius;
+@@ -376,6 +468,17 @@
+             rect(local+162,124,6,122,.12f,.15f,.17f,.44f);
+             rect(local+154,118,22,12,.74f,.50f,.22f,.76f);
+             rect(local+158,130,14,17,.98f,.69f,.25f,.30f);
++        }
++    }
++    if(environmentTexture_) {
++        const int chapter=std::clamp(static_cast<int>(s.player.pos.x/768.f),0,3);
++        const float left=camera_.x-viewWidth_*.5f;
++        for(float worldX=std::floor(left/320.f)*320.f;worldX<left+viewWidth_+320;worldX+=320.f) {
++            const float sy=275.f;
++            if(chapter==0)worldEnvRect(worldX+80,sy-76,55,76,712,574,142,138,.83f);
++            else if(chapter==1)worldEnvRect(worldX+80,sy-94,48,94,712,382,142,141,.78f);
++            else if(chapter==2)worldEnvRect(worldX+80,sy-65,77,65,712,762,142,142,.83f);
++            else worldEnvRect(worldX+80,sy-86,62,86,864,573,142,139,.82f);
+         }
+     }
+     for(const auto& entry : s.combat.transients.projectiles()) {
+@@ -598,7 +701,8 @@
+         rect(viewWidth_*.5f-104.f,86.f,208.f,122.f,.08f,.09f,.11f,.88f);
+         rect(viewWidth_*.5f-100.f,90.f,200.f,4,.72f,.17f,.16f,.95f);
+         drawLabel(viewWidth_*.5f-42.f,114.f,"YOU DIED",1.5f);
+-        drawLabel(viewWidth_*.5f-76.f,138.f,"FELL INTO THE ABYSS",.85f);
++        drawLabel(viewWidth_*.5f-76.f,138.f,
++            simulation.fellToDeath?"FELL INTO THE ABYSS":"KILLED IN COMBAT",.85f);
+         rect(viewWidth_*.5f-64.f,164.f,128.f,34,.43f,.18f,.14f,.96f);
+         rect(viewWidth_*.5f-60.f,168.f,120.f,26,.80f,.57f,.27f,.35f);
+         drawLabel(viewWidth_*.5f-35.f,176.f,"RELOAD",1.2f);
+@@ -645,6 +749,10 @@
+     glActiveTexture(GL_TEXTURE0);
+     glBindTexture(GL_TEXTURE_2D,texture_);
+     glUniform1i(atlasUniform_,0);
++    glActiveTexture(GL_TEXTURE1);
++    glBindTexture(GL_TEXTURE_2D,environmentTexture_ ? environmentTexture_ : texture_);
++    glUniform1i(environmentUniform_,1);
++    glActiveTexture(GL_TEXTURE0);
+     glBindVertexArray(vao_);
+     glBindBuffer(GL_ARRAY_BUFFER,vbo_);
+     // Avoid allocating a fresh GL buffer store each render tick; grow only
+--- a/android/app/src/main/cpp/CMakeLists.txt
++++ b/android/app/src/main/cpp/CMakeLists.txt
+@@ -8,7 +8,7 @@
+ find_package(game-activity REQUIRED CONFIG)
+ add_library(forgecell SHARED android_main.cpp GlRenderer.cpp)
+ target_include_directories(forgecell PRIVATE "${FORGECELL_ROOT}/core/include")
+-target_link_libraries(forgecell PRIVATE forgecell_core game-activity::game-activity_static android log EGL GLESv3)
++target_link_libraries(forgecell PRIVATE forgecell_core game-activity::game-activity_static android log EGL GLESv3 z)
+ 
+ # The static archive's JNI bridge can be removed by the linker's dead-strip.
+ # Without it GameActivity throws UnsatisfiedLinkError in onCreate().
+--- a/android/app/build.gradle.kts
++++ b/android/app/build.gradle.kts
+@@ -9,8 +9,8 @@
+         applicationId = "com.forgecell.engine"
+         minSdk = 26
+         targetSdk = 35
+-        versionCode = 21
+-        versionName = "0.16.4"
++        versionCode = 22
++        versionName = "0.16.5"
+         ndk { abiFilters += listOf("arm64-v8a", "x86_64") }
+         externalNativeBuild {
+             cmake {
+@@ -31,7 +31,7 @@
+     // AAsset_getBuffer is used for binary FC* tables and the RGBA sprite atlas.
+     // Keep these resources uncompressed in the APK for predictable load cost.
+     androidResources {
+-        noCompress += listOf("rgba", "fcan", "fcva", "fcey", "fcl", "fcit", "fcwp", "fclt", "fcob")
++        noCompress += listOf("rgba", "fcan", "fcva", "fcey", "fcl", "fcit", "fcwp", "fclt", "fcob", "fcex")
+     }
+     externalNativeBuild {
+         cmake {
+--- a/tests/android_project_structure.py
++++ b/tests/android_project_structure.py
+@@ -2,6 +2,7 @@
+ from pathlib import Path
+ import re
+ import struct
++import zlib
+ import sys
+ import xml.etree.ElementTree as ET
+ 
+@@ -16,7 +17,7 @@
+ styles = (root / 'android/app/src/main/res/values/styles.xml').read_text()
+ assert 'Theme.AppCompat.DayNight.NoActionBar' in styles or '@android:style/Theme.Material.NoActionBar' in styles
+ app = (root / 'android/app/build.gradle.kts').read_text()
+-for line in ('compileSdk = 35', 'minSdk = 26', 'versionName = "0.16.4"',
++for line in ('compileSdk = 35', 'minSdk = 26', 'versionName = "0.16.5"',
+              'games-activity:4.4.2', 'prefab = true', 'arm64-v8a'):
+     assert line in app, line
+ assets = root / 'android/app/src/main/assets'
+@@ -30,6 +31,13 @@
+ w, h = struct.unpack_from('<HH', atlas, 4)
+ assert (w, h) == (1056, 1200)
+ assert len(atlas) == 8 + w * h * 4
++env_asset = (assets / 'environment.fcex').read_bytes()
++assert env_asset[:4] == b'FCEX'
++env_w, env_h, raw_size = struct.unpack_from('<HHI', env_asset, 4)
++assert (env_w, env_h) == (1024, 1024)
++assert raw_size == 1024 * 1024 * 4
++assert len(zlib.decompress(env_asset[12:])) == raw_size
++assert '"fcex"' in app, 'environment atlas must be stored uncompressed in APK assets'
+ # Host-side check that Android renderer is wired to the touch drag preview.
+ renderer = (root / 'android/app/src/main/cpp/GlRenderer.cpp').read_text()
+ appmain = (root / 'android/app/src/main/cpp/android_main.cpp').read_text()
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -68,5 +68,8 @@
+   target_link_libraries(forgecell_level01_jump_tests PRIVATE forgecell_core)
+   target_compile_definitions(forgecell_level01_jump_tests PRIVATE FORGECELL_SOURCE_ROOT="${CMAKE_CURRENT_SOURCE_DIR}")
+   add_test(NAME level01_jump_tests COMMAND forgecell_level01_jump_tests)
++  add_executable(forgecell_death_restart_tests tests/death_restart_tests.cpp)
++  target_link_libraries(forgecell_death_restart_tests PRIVATE forgecell_core)
++  add_test(NAME death_restart_tests COMMAND forgecell_death_restart_tests)
+ endif()
+   
+--- a/tests/death_restart_tests.cpp
++++ b/tests/death_restart_tests.cpp
+@@ -0,0 +1,36 @@
++#include "forge/Simulation.hpp"
++#include "forge/TouchControls.hpp"
++#include <cmath>
++#include <cstdlib>
++#include <iostream>
++using namespace forge;
++static void check(bool ok,const char* msg){if(!ok){std::cerr<<"FAIL: "<<msg<<'\n';std::exit(1);}}
++int main(){
++    Simulation pit;
++    pit.combat.enemies.clear();
++    pit.player.pos={560,250};pit.player.prevPos=pit.player.pos;
++    pit.player.vel={0,0};pit.player.grounded=false;
++    for(int i=0;i<160 && !pit.dead;++i)pit.tick(kFixedDt,{});
++    check(pit.dead && pit.player.health==0 && pit.fellToDeath,"falling below world is fatal");
++    const auto frozen=pit.player.pos;
++    for(int i=0;i<30;++i){Input in;in.move=1;in.jumpPressed=true;pit.tick(kFixedDt,in);}
++    check(pit.dead && pit.player.pos.x==frozen.x && pit.player.pos.y==frozen.y,
++        "dead player cannot move or interact");
++    Input restart{};restart.restartLevelPressed=true;
++    pit.tick(kFixedDt,restart);
++    check(!pit.dead && pit.player.health==100 && pit.player.pos.x==72,"restart restores fresh run");
++    Simulation slain;slain.combat.enemies.clear();slain.player.health=0;
++    slain.tick(kFixedDt,{});
++    check(slain.dead && !slain.fellToDeath,"combat death does not claim abyss fall");
++    TouchControls touch;touch.resize(640,360);touch.setPlayerDead(true);
++    touch.pointerDown(1,320,181);
++    check(touch.sample().restartLevelPressed,"center RELOAD overlay is an actual touch button");
++    check(!touch.sample().restartLevelPressed,"restart is emitted only once");
++    touch.pointerUp(1);
++    touch.pointerDown(2,612,28);
++    check(touch.sample().restartLevelPressed,"top right RESET works while dead");
++    touch.clear();touch.setPlayerDead(false);
++    touch.pointerDown(3,612,28);
++    check(touch.sample().restartLevelPressed,"top right RESET works while playing");
++    std::cout<<"Fall death / reload / restart: PASS\n";
++}
+--- a/tools/generate_fallback_environment.py
++++ b/tools/generate_fallback_environment.py
+@@ -0,0 +1,76 @@
++"""Build standalone fallback Gothic-Mars atlas when supplied concept images are absent.
++The source distribution ships reference-based environment.fcex; this generator is
++for cloud builds without access to private reference images.
++"""
++from PIL import Image, ImageDraw
++import random, math, struct, zlib, json
++from pathlib import Path
++root=Path(__file__).resolve().parents[1]
++canvas=Image.new('RGBA',(1024,1024),(0,0,0,0))
++random.seed(40999)
++# Mars skyline, layered silhouettes and steel cathedral details
++sky=Image.new('RGB',(704,396))
++d=ImageDraw.Draw(sky)
++for y in range(396):
++ t=y/395
++ d.line([(0,y),(704,y)], fill=(round(83+85*t),round(29+38*t),round(35+17*t)))
++for layer in range(4):
++ base=[240,281,333,389][layer]
++ tint=[(94,36,41),(79,32,38),(58,29,38),(35,24,34)][layer]
++ x=-24
++ while x<730:
++  w=random.randint(19,48); h=random.randint(30,117)
++  d.rectangle((x,base-h,x+w,396),fill=tint)
++  d.polygon([(x+8,base-h),(x+w//2,base-h-random.randint(6,32)),(x+w-8,base-h)],fill=tint)
++  if w>30:
++   d.rectangle((x+w//2-2,base-h-20,x+w//2+1,base-h-4),fill=tint)
++  if layer>0:
++   for wy in range(base-h+24,base-8,19):
++    for wx in range(x+7,x+w-6,10):
++     if random.random()<.7:d.rectangle((wx,wy,wx+2,wy+4),fill=(142,63,37))
++  x+=w-3
++canvas.paste(sky,(0,0))
++# Dark gothic arches in alpha layer
++arch=Image.new('RGBA',(704,396));da=ImageDraw.Draw(arch)
++for x in range(0,704,165):
++ da.rectangle((x,100,x+14,394),fill=(22,43,51,235))
++ da.rectangle((x+137,100,x+151,394),fill=(22,43,51,235))
++ da.rectangle((x,97,x+151,112),fill=(22,43,51,235))
++ da.line([(x+15,118),(x+77,164),(x+137,118)],fill=(64,82,85,235),width=8)
++ for y in range(140,380,60):
++  da.rectangle((x+2,y,x+12,y+9),fill=(107,112,94,200))
++canvas.alpha_composite(arch,(0,404))
++# Metal plate tiles in grid
++for i in range(4):
++ x=712+76*i; y=2
++ dr=ImageDraw.Draw(canvas)
++ dr.rectangle((x,y,x+71,y+71),fill=(31+i*3,38+i*4,43+i*3,255),outline=(145,93,44,255),width=3)
++ dr.rectangle((x+7,y+7,x+65,y+65),outline=(108,87,61,255),width=3)
++ for ox in (7,61):
++  for oy in (7,61):dr.ellipse((x+ox-2,y+oy-2,x+ox+2,y+oy+2),fill=(194,132,55,255))
++ if i==1:
++  dr.ellipse((x+21,y+21,x+51,y+51),outline=(181,132,61,255),width=4)
++ if i==2:
++  for j in range(6):dr.line((x+10+j*9,y+14,x+10+j*9,y+60),fill=(12,20,30,255),width=3)
++# horizontal platform rail
++D=ImageDraw.Draw(canvas)
++D.rectangle((712,94,1000,161),fill=(24,27,30,255),outline=(206,129,47,255),width=4)
++for x in range(728,999,32):
++ D.rectangle((x,97,x+15,117),fill=(113,79,48,255),outline=(245,167,71,255),width=2)
++ D.line((x+9,120,x+17,150),fill=(98,71,48,255),width=4)
++# 8 object sprites in 2x4 grid
++for i in range(8):
++ col=i%2; row=i//2
++ x=712+152*col;y=178+190*row
++ D.rectangle((x+16,y+14,x+127,y+148),fill=(25,34,40,255),outline=(193,123,47,255),width=5)
++ D.rectangle((x+28,y+24,x+114,y+131),outline=(90,106,104,255),width=5)
++ if i in (3,4,6,7):
++  D.rectangle((x+40,y+39,x+100,y+104),fill=(13,119,138,255) if i in (4,7) else (214,87,20,255))
++  D.rectangle((x+48,y+49,x+93,y+91),fill=(57,215,202,255) if i in (4,7) else (248,171,53,255))
++ if i in (2,5):
++  D.polygon([(x+31,y+24),(x+111,y+24),(x+104,y+132),(x+68,y+145),(x+31,y+132)],fill=(115,25,32,255))
++  D.ellipse((x+55,y+64,x+89,y+95),outline=(223,173,88,255),width=5)
++raw=canvas.tobytes()
++p=root/'android/app/src/main/assets/environment.fcex'
++p.write_bytes(b'FCEX'+struct.pack('<HHI',1024,1024,len(raw))+zlib.compress(raw,9))
++print('Generated fallback texture',p.stat().st_size,'bytes')
