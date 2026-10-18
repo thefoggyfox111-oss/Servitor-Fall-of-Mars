@@ -9,6 +9,7 @@ on:
       - forgecell-engine-v0.16.2
       - forgecell-engine-v0.16.3
       - forgecell-engine-v0.16.4
+      - forgecell-engine-v0.16.5
   workflow_dispatch:
 permissions:
   contents: read
@@ -57,6 +58,12 @@ jobs:
           subprocess.run(['patch','--batch','-p1'],input=patch,cwd='ForgeCell_Engine',check=True)
           print('ForgeCell 0.16.4 patch applied:',len(patch),'bytes')
           PY
+      - name: Apply ForgeCell 0.16.5 fixes and texture renderer
+        run: |
+          patch --batch -p1 -d ForgeCell_Engine < forgecell/upgrade_0165.patch
+          python3 -m pip install --quiet pillow
+          python3 ForgeCell_Engine/tools/generate_fallback_environment.py
+          test -s ForgeCell_Engine/android/app/src/main/assets/environment.fcex
       - name: Verify source archive
         run: |
           echo '043bfff795aca81305abbe4de66c7bc9d23a83c424d9cfdbfafbc39084983bbc  forgecell/ForgeCell_Engine_0.15.0_source.zip' | sha256sum -c -
@@ -67,8 +74,8 @@ jobs:
           cmake -S ForgeCell_Engine -B forgecell-host-build -G Ninja -DCMAKE_BUILD_TYPE=Debug -DFORGECELL_BUILD_TESTS=ON
           cmake --build forgecell-host-build --parallel 4
           ctest --test-dir forgecell-host-build --output-on-failure
-      - name: Archive verified 0.16.4 source
-        run: zip -qr ForgeCell_Engine_0.16.4_source.zip ForgeCell_Engine
+      - name: Archive verified 0.16.5 cloud-build source
+        run: zip -qr ForgeCell_Engine_0.16.5_cloud_source.zip ForgeCell_Engine
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -113,6 +120,7 @@ jobs:
             adb shell am start -W -n com.forgecell.engine/.MainActivity
             sleep 12
             adb logcat -d > forgecell-startup-logcat.txt
+            grep -q 'Environment atlas loaded' forgecell-startup-logcat.txt || (echo 'Environment texture did not initialize'; tail -100 forgecell-startup-logcat.txt; exit 1)
             adb shell pidof com.forgecell.engine || (grep -E 'FATAL EXCEPTION|AndroidRuntime|ForgeCell|Fatal signal' forgecell-startup-logcat.txt | tail -100; exit 1)
             adb shell screencap -p /sdcard/forgecell-smoke.png
             adb pull /sdcard/forgecell-smoke.png forgecell-smoke.png
@@ -138,20 +146,20 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: ForgeCell-0.16.4-demo-apk
+          name: ForgeCell-0.16.5-textured-demo-apk
           path: ForgeCell_Engine/android/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
 
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: ForgeCell-0.16.4-screen
+          name: ForgeCell-0.16.5-screen
           path: forgecell-smoke.png
           if-no-files-found: ignore
 
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: ForgeCell-0.16.4-source
-          path: ForgeCell_Engine_0.16.4_source.zip
+          name: ForgeCell-0.16.5-cloud-source
+          path: ForgeCell_Engine_0.16.5_cloud_source.zip
           if-no-files-found: ignore
