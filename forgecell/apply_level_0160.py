@@ -26,7 +26,7 @@ content = main.read_text()
 assert 'forgecell_demo.fcsv' in content
 main.write_text(content.replace('forgecell_demo.fcsv','forgecell_level01.fcsv'))
 check = root/'tests/android_project_structure.py'
-check.write_text(check.read_text().replace('versionName = "0.15.2"','versionName = "0.16.0"'))
+check.write_text(check.read_text().replace('versionName = "0.15.0"','versionName = "0.16.0"').replace('versionName = "0.15.2"','versionName = "0.16.0"'))
 check.write_text(check.read_text().replace("assert '@android:style/Theme.Material.NoActionBar' in styles\nassert 'AppCompat' not in styles", "assert 'Theme.AppCompat.DayNight.NoActionBar' in styles or '@android:style/Theme.Material.NoActionBar' in styles"))
 raw = (root/'android/app/src/main/assets/demo.fcl').read_bytes()
 magic, version, _, width, height, solids, one_way = struct.unpack_from('<4sHHffII', raw)
