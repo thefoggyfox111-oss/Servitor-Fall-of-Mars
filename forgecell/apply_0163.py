@@ -13,4 +13,11 @@ test=root/"tests/android_project_structure.py"
 s=test.read_text()
 assert 'versionName = "0.16.2"' in s
 test.write_text(s.replace('versionName = "0.16.2"','versionName = "0.16.3"'))
+renderer=root/"android/app/src/main/cpp/GlRenderer.cpp"
+gl=renderer.read_text()
+assert "layer==0?146.f:118.f:92.f" in gl
+assert "layer==0?248.f:288.f:310.f" in gl
+gl=gl.replace("layer==0?146.f:118.f:92.f","layer==0?146.f:layer==1?118.f:92.f")
+gl=gl.replace("layer==0?248.f:288.f:310.f","layer==0?248.f:layer==1?288.f:310.f")
+renderer.write_text(gl)
 print("ForgeCell 0.16.3 jump+graphics installed")
