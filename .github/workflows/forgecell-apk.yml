@@ -8,6 +8,7 @@ on:
       - forgecell-engine-v0.16.1
       - forgecell-engine-v0.16.2
       - forgecell-engine-v0.16.3
+      - forgecell-engine-v0.16.4
   workflow_dispatch:
 permissions:
   contents: read
@@ -45,6 +46,17 @@ jobs:
         run: python3 forgecell/fix_render_loop_0162.py
       - name: Improve jump reach and four-zone environment renderer
         run: python3 forgecell/apply_0163.py
+      - name: Apply ForgeCell 0.16.4 death, restart and art improvements
+        run: |
+          python3 - <<'PY'
+          import base64, zlib, subprocess
+          from pathlib import Path
+          encoded=Path('forgecell/upgrade_0164.b85').read_text().strip()
+          assert len(encoded)==9355, "Incomplete patch payload"
+          patch=zlib.decompress(base64.b85decode(encoded))
+          subprocess.run(['patch','--batch','-p1'],input=patch,cwd='ForgeCell_Engine',check=True)
+          print('ForgeCell 0.16.4 patch applied:',len(patch),'bytes')
+          PY
       - name: Verify source archive
         run: |
           echo '043bfff795aca81305abbe4de66c7bc9d23a83c424d9cfdbfafbc39084983bbc  forgecell/ForgeCell_Engine_0.15.0_source.zip' | sha256sum -c -
@@ -55,8 +67,8 @@ jobs:
           cmake -S ForgeCell_Engine -B forgecell-host-build -G Ninja -DCMAKE_BUILD_TYPE=Debug -DFORGECELL_BUILD_TESTS=ON
           cmake --build forgecell-host-build --parallel 4
           ctest --test-dir forgecell-host-build --output-on-failure
-      - name: Archive verified 0.16.3 source
-        run: zip -qr ForgeCell_Engine_0.16.3_source.zip ForgeCell_Engine
+      - name: Archive verified 0.16.4 source
+        run: zip -qr ForgeCell_Engine_0.16.4_source.zip ForgeCell_Engine
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -126,20 +138,20 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: ForgeCell-0.16.3-level01-apk
+          name: ForgeCell-0.16.4-demo-apk
           path: ForgeCell_Engine/android/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
 
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: ForgeCell-0.16.3-screen
+          name: ForgeCell-0.16.4-screen
           path: forgecell-smoke.png
           if-no-files-found: ignore
 
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: ForgeCell-0.16.3-source
-          path: ForgeCell_Engine_0.16.3_source.zip
+          name: ForgeCell-0.16.4-source
+          path: ForgeCell_Engine_0.16.4_source.zip
           if-no-files-found: ignore
