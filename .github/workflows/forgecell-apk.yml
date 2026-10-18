@@ -6,6 +6,7 @@ on:
       - forgecell-engine-v0.15.2
       - forgecell-engine-v0.16.0
       - forgecell-engine-v0.16.1
+      - forgecell-engine-v0.16.2
   workflow_dispatch:
 permissions:
   contents: read
@@ -39,6 +40,8 @@ jobs:
         run: python3 forgecell/apply_level_0160.py
       - name: Instrument OpenGL and frame loop for black-screen diagnosis
         run: python3 forgecell/diagnose_black_screen_0161.py
+      - name: Prevent Android event-loop render starvation
+        run: python3 forgecell/fix_render_loop_0162.py
       - name: Verify source archive
         run: |
           echo '043bfff795aca81305abbe4de66c7bc9d23a83c424d9cfdbfafbc39084983bbc  forgecell/ForgeCell_Engine_0.15.0_source.zip' | sha256sum -c -
@@ -97,6 +100,18 @@ jobs:
             adb shell screencap -p /sdcard/forgecell-smoke.png
             adb pull /sdcard/forgecell-smoke.png forgecell-smoke.png
             echo 'Startup smoke test passed: application process remains alive'
+      - name: Verify visible Android frame (not black)
+        run: |
+          python3 -m pip install -q Pillow
+          python3 - <<'PY'
+          from PIL import Image
+          image=Image.open("forgecell-smoke.png").convert("RGB")
+          hist=image.getcolors(image.width*image.height)
+          assert hist and len(hist)>5, "All-black or solid-color Android screenshot"
+          colored=sum(n for n,color in hist if max(color)>24)
+          assert colored>image.width*image.height//100, f"Only {colored} visible pixels"
+          print("Visible game pixels:",colored,"colors:",len(hist))
+          PY
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -106,13 +121,13 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: ForgeCell-0.16.1-diagnostic-apk
+          name: ForgeCell-0.16.2-renderfix-apk
           path: ForgeCell_Engine/android/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
 
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: ForgeCell-0.16.1-smoke-screenshot
+          name: ForgeCell-0.16.2-smoke-screenshot
           path: forgecell-smoke.png
           if-no-files-found: ignore
